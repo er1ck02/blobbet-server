@@ -1,19 +1,36 @@
-// server.js — BlobBet Free Mode (rooms + AOI + Socket.IO defaults)
+// server.js — BlobBet Server (DIAG BUILD: verbose logs)
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 
 const PORT = process.env.PORT || 7777;
-
 const app = express();
-app.use(cors()); // allow all origins for now
+
+// Request logger — will log ALL HTTP requests including /socket.io polling
+app.use((req, _res, next) => {
+  console.log(`[http] ${req.method} ${req.url}`);
+  next();
+});
+
+app.use(cors()); // allow all origins
 
 const server = http.createServer(app);
 
-// Let Socket.IO use polling + upgrade (good for PaaS like Render)
+// Socket.IO — use defaults (polling + upgrade), open CORS
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
+  // path: '/socket.io', // default
+});
+
+// Extra engine-level logging
+io.engine.on('connection', (rawSocket) => {
+  console.log('[engine] connection from', rawSocket.request.headers['x-forwarded-for'] || rawSocket.conn.remoteAddress || 'unknown');
+});
+io.engine.on('connection_error', (err) => {
+  console.log('[engine] connection_error', {
+    code: err.code, message: err.message, context: err.context
+  });
 });
 
 // ---- Game config ----
@@ -51,12 +68,13 @@ function getOrCreateRoomForJoin() {
 }
 if (rooms.size === 0) rooms.set('room-1', { id: 'room-1', players: new Map(), pellets: spawnPellets() });
 
-// ---- Sockets ----
 io.on('connection', (socket) => {
-  console.log('[connect]', socket.id);
+  console.log('[socket] connect', socket.id);
+
   let room = null;
 
   socket.on('join', ({ name, mode }) => {
+    console.log('[socket] join event from', socket.id, 'name=', name, 'mode=', mode);
     room = getOrCreateRoomForJoin();
     const p = {
       id: socket.id,
@@ -71,7 +89,7 @@ io.on('connection', (socket) => {
     };
     room.players.set(socket.id, p);
     socket.join(room.id);
-    console.log('[join]', socket.id, '->', room.id, p.name);
+    console.log('[room]', room.id, 'players=', room.players.size);
   });
 
   socket.on('input', (inp) => {
@@ -85,19 +103,23 @@ io.on('connection', (socket) => {
     p.lastInputAt = Date.now();
   });
 
-  socket.on('disconnect', () => {
-    console.log('[disconnect]', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log('[socket] disconnect', socket.id, 'reason=', reason);
     if (room) {
       room.players.delete(socket.id);
       socket.leave(room.id);
+      console.log('[room]', room.id, 'players=', room.players.size);
     }
+  });
+
+  socket.on('error', (err) => {
+    console.log('[socket] error', socket.id, err?.message || err);
   });
 });
 
 // ---- Game loop ----
 setInterval(() => {
   for (const room of rooms.values()) {
-    // integrate
     for (const p of room.players.values()) {
       p.x += p.vx * (TICK/1000);
       p.y += p.vy * (TICK/1000);
@@ -167,10 +189,10 @@ setInterval(() => {
 
 // ---- HTTP ----
 app.get('/', (_req, res) => {
-  res.type('text/plain').end('BlobBet Free Mode server (rooms) is running.');
+  res.type('text/plain').end('BlobBet Free Mode server (DIAG build) is running.');
 });
 app.get('/version', (_req, res) => {
-  res.json({ ok: true, server: 'rooms-12hz-aoi', time: Date.now() });
+  res.json({ ok: true, server: 'rooms-12hz-aoi', diag: true, time: Date.now() });
 });
 
 server.listen(PORT, () => {
