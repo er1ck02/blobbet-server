@@ -11,10 +11,9 @@ app.use(cors()); // allow all origins for now
 
 const server = http.createServer(app);
 
-// IMPORTANT: don't force "websocket" only; let Socket.IO use polling + upgrade
+// Let Socket.IO use polling + upgrade (good for PaaS like Render)
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
-  // DO NOT set transports here (defaults are best for Render)
 });
 
 // ---- Game config ----
