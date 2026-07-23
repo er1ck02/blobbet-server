@@ -1,14 +1,10 @@
 {
-  "name": "blobbet-server",
-  "version": "1.1.1",
+  "name": "email-lookup",
+  "version": "1.0.0",
+  "description": "Find public profiles associated with an email address, from consent-based public sources.",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "socket.io": "^4.7.2"
   }
 }

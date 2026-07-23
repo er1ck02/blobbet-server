@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Email Lookup</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #191c22; --panel2: #21252d; --line: #2c313b;
+      --text: #e7eaf0; --muted: #9aa3b2; --accent: #6ea8fe; --accent2: #8ce0b0;
+      --warn: #f0c674; --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 32px 20px 80px; }
+    h1 { font-size: 26px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    form { display: flex; gap: 10px; margin-bottom: 14px; }
+    input[type=email] {
+      flex: 1; padding: 12px 14px; border-radius: var(--radius);
+      border: 1px solid var(--line); background: var(--panel); color: var(--text);
+      font-size: 15px; outline: none;
+    }
+    input[type=email]:focus { border-color: var(--accent); }
+    button {
+      padding: 12px 20px; border: none; border-radius: var(--radius);
+      background: var(--accent); color: #0b1020; font-weight: 600; cursor: pointer;
+      font-size: 15px;
+    }
+    button:disabled { opacity: .55; cursor: default; }
+    .notice {
+      background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+      border-radius: 8px; padding: 10px 14px; color: var(--muted); font-size: 13px; margin-bottom: 24px;
+    }
+    .status { color: var(--muted); padding: 10px 0; }
+    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--muted); margin: 24px 0 10px; }
+    .card {
+      display: flex; gap: 14px; align-items: flex-start;
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+    }
+    .card.confirmed { border-left: 3px solid var(--accent2); }
+    .card.possible { border-left: 3px solid var(--line); }
+    .avatar {
+      width: 48px; height: 48px; border-radius: 50%; background: var(--panel2);
+      object-fit: cover; flex-shrink: 0;
+    }
+    .card .body { flex: 1; min-width: 0; }
+    .card .name { font-weight: 600; }
+    .card .meta { color: var(--muted); font-size: 13px; word-break: break-word; }
+    .card a { color: var(--accent); text-decoration: none; word-break: break-all; }
+    .card a:hover { text-decoration: underline; }
+    .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 999px;
+      background: var(--panel2); color: var(--muted); margin-left: 6px; vertical-align: middle; }
+    .empty { color: var(--muted); font-style: italic; padding: 8px 0; }
+    footer { color: var(--muted); font-size: 12px; margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Email Lookup</h1>
+    <p class="sub">Public profiles associated with an email address.</p>
+
+    <form id="form">
+      <input id="email" type="email" placeholder="name@example.com" autocomplete="off" required />
+      <button id="go" type="submit">Search</button>
+    </form>
+
+    <div class="notice">
+      Results come from public, consent-based sources (Gravatar, GitHub, public username
+      APIs). Handle matches are <strong>unverified</strong> — a shared username is not proof
+      of the same person. Use responsibly and within the law and each site's terms.
+    </div>
+
+    <div id="status" class="status" hidden></div>
+    <div id="results"></div>
+  </div>
+
+  <footer class="wrap" style="padding-top:0">Aggregates only what people have chosen to make public.</footer>
+
+  <script>
+    const form = document.getElementById('form');
+    const emailInput = document.getElementById('email');
+    const goBtn = document.getElementById('go');
+    const statusEl = document.getElementById('status');
+    const results = document.getElementById('results');
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    function setStatus(msg) {
+      if (!msg) { statusEl.hidden = true; return; }
+      statusEl.hidden = false; statusEl.textContent = msg;
+    }
+
+    function card({ cls, avatar, name, lines, link }) {
+      const img = avatar
+        ? `<img class="avatar" src="${esc(avatar)}" alt="" onerror="this.style.visibility='hidden'">`
+        : `<div class="avatar"></div>`;
+      const linkHtml = link ? `<div class="meta"><a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)}</a></div>` : '';
+      const meta = (lines || []).filter(Boolean).map((l) => `<div class="meta">${l}</div>`).join('');
+      return `<div class="card ${cls}">${img}<div class="body"><div class="name">${name}</div>${meta}${linkHtml}</div></div>`;
+    }
+
+    function render(data) {
+      const blocks = [];
+      const confirmed = [];
+
+      if (data.gravatar) {
+        const g = data.gravatar;
+        confirmed.push(card({
+          cls: 'confirmed',
+          avatar: g.avatar,
+          name: `${esc(g.displayName || 'Gravatar profile')}<span class="pill">Gravatar</span>`,
+          lines: [
+            g.aboutMe && esc(g.aboutMe),
+            g.location && ('📍 ' + esc(g.location)),
+          ],
+          link: g.profileUrl,
+        }));
+        for (const a of g.accounts || []) {
+          confirmed.push(card({
+            cls: 'confirmed',
+            name: `${esc(a.platform)}<span class="pill">linked on Gravatar</span>`,
+            lines: [a.username && ('@' + esc(a.username))],
+            link: a.url,
+          }));
+        }
+      }
+
+      if (data.github) {
+        const h = data.github;
+        confirmed.push(card({
+          cls: 'confirmed',
+          avatar: h.avatar,
+          name: `${esc(h.name || h.login)}<span class="pill">GitHub · email match</span>`,
+          lines: [
+            h.bio && esc(h.bio),
+            h.company && ('🏢 ' + esc(h.company)),
+            h.location && ('📍 ' + esc(h.location)),
+            h.blog && `<a href="${esc(h.blog)}" target="_blank" rel="noopener noreferrer">${esc(h.blog)}</a>`,
+          ],
+          link: h.url,
+        }));
+      }
+
+      blocks.push('<div class="section-title">Confirmed (tied to this email)</div>');
+      blocks.push(confirmed.length ? confirmed.join('') : '<div class="empty">No profiles are publicly published against this email.</div>');
+
+      blocks.push('<div class="section-title">Possible profiles (same username · unverified)</div>');
+      if (data.usernameMatches && data.usernameMatches.length) {
+        blocks.push(data.usernameMatches.map((m) => card({
+          cls: 'possible',
+          name: `${esc(m.platform)}<span class="pill">@${esc(m.username)}</span>`,
+          link: m.url,
+        })).join(''));
+      } else {
+        blocks.push('<div class="empty">No matching handles found on the checked platforms.</div>');
+      }
+
+      results.innerHTML = blocks.join('');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = emailInput.value.trim();
+      if (!email) return;
+      results.innerHTML = '';
+      goBtn.disabled = true;
+      setStatus('Searching public sources…');
+      try {
+        const res = await fetch('/api/lookup?email=' + encodeURIComponent(email));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Lookup failed');
+        setStatus('');
+        render(data);
+      } catch (err) {
+        setStatus('Error: ' + err.message);
+      } finally {
+        goBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
